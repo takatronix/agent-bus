@@ -6,5 +6,7 @@ build/
 dist/
 *.egg-info/
 .env
+discord-webhooks.json
+*.secrets.json
 data/
 artifacts/

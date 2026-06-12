@@ -41,6 +41,7 @@ def task() -> None:
 @click.option("--body-file", type=click.Path(exists=True, dir_okay=False), help="Read body from file.")
 @click.option("--created-by", default="human")
 @click.option("--priority", default="normal")
+@click.option("--project")
 @click.option("--repo")
 @click.option("--branch")
 @click.option("--target-agent")
@@ -52,6 +53,7 @@ def task_create(
     body_file: str | None,
     created_by: str,
     priority: str,
+    project: str | None,
     repo: str | None,
     branch: str | None,
     target_agent: str | None,
@@ -67,6 +69,7 @@ def task_create(
             "body": body,
             "created_by": created_by,
             "priority": priority,
+            "project": project,
             "repo": repo,
             "branch": branch,
             "target_agent": target_agent,
@@ -78,17 +81,34 @@ def task_create(
 
 @task.command("list")
 @click.option("--status")
+@click.option("--project")
 @click.option("--owner")
 @click.option("--target-agent")
 @click.option("--limit", default=20)
 @click.option("--json", "as_json", is_flag=True)
-def task_list(status: str | None, owner: str | None, target_agent: str | None, limit: int, as_json: bool) -> None:
+def task_list(
+    status: str | None,
+    project: str | None,
+    owner: str | None,
+    target_agent: str | None,
+    limit: int,
+    as_json: bool,
+) -> None:
     params = []
-    for key, value in [("status", status), ("owner", owner), ("target_agent", target_agent), ("limit", limit)]:
+    for key, value in [
+        ("status", status),
+        ("project", project),
+        ("owner", owner),
+        ("target_agent", target_agent),
+        ("limit", limit),
+    ]:
         if value:
             params.append(f"{key}={value}")
     data = client().get("/tasks" + (f"?{'&'.join(params)}" if params else ""))["tasks"]
-    emit(data if as_json else table(data, ["id", "status", "priority", "owner", "target_agent", "title"]), as_json)
+    emit(
+        data if as_json else table(data, ["id", "project", "status", "priority", "owner", "target_agent", "title"]),
+        as_json,
+    )
 
 
 @task.command("show")
@@ -111,6 +131,7 @@ def task_claim(task_id: str, agent: str, as_json: bool) -> None:
 @task.command("update")
 @click.argument("task_id")
 @click.option("--status")
+@click.option("--project")
 @click.option("--owner")
 @click.option("--branch")
 @click.option("--note", default="")
@@ -120,6 +141,7 @@ def task_claim(task_id: str, agent: str, as_json: bool) -> None:
 def task_update(
     task_id: str,
     status: str | None,
+    project: str | None,
     owner: str | None,
     branch: str | None,
     note: str,
@@ -130,6 +152,8 @@ def task_update(
     payload: dict[str, Any] = {"actor": actor, "note": note}
     if status:
         payload["status"] = status
+    if project:
+        payload["project"] = project
     if owner:
         payload["owner"] = owner
     if branch:

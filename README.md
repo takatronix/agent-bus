@@ -33,7 +33,8 @@ cp .env.example .env
 
 On Ubuntu, install `python3.12-venv` first if `python3 -m venv` reports that `ensurepip` is unavailable.
 
-Edit `.env` and set `DISCORD_WEBHOOK_URL` if you want Discord notifications.
+Edit `.env` and set `DISCORD_WEBHOOK_URL` if you want one default Discord channel.
+For project-specific channels, set `DISCORD_WEBHOOK_ROUTES` and create `discord-webhooks.json`.
 
 ## Run
 
@@ -54,10 +55,11 @@ For multiple machines, run Agent Bus on one host and expose it over Tailscale. T
 ```bash
 /home/aspa/agent-bus/bin/agentctl task create "Fix login race" \
   --body "Investigate refresh token race and add regression coverage." \
+  --project platform \
   --repo my-app \
   --target-agent codex
 
-/home/aspa/agent-bus/bin/agentctl task list --status open
+/home/aspa/agent-bus/bin/agentctl task list --project platform --status open
 /home/aspa/agent-bus/bin/agentctl task claim task_xxx --agent codex-mbp
 /home/aspa/agent-bus/bin/agentctl event post --task-id task_xxx --actor codex-mbp --type progress --body "Tests are running"
 /home/aspa/agent-bus/bin/agentctl task update task_xxx --status done --actor codex-mbp --note "Implemented and verified"
@@ -131,10 +133,43 @@ X-Agent-Bus-Token: <token>
 
 ## Discord
 
-Use a channel incoming webhook and put the URL in `.env`:
+Use a channel incoming webhook and put the fallback URL in `.env`:
 
 ```text
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
+
+For separate channels per project or repo, copy `discord-webhooks.example.json`:
+
+```bash
+cp /home/aspa/agent-bus/discord-webhooks.example.json /home/aspa/agent-bus/discord-webhooks.json
+```
+
+Then configure local secrets:
+
+```json
+{
+  "default": "https://discord.com/api/webhooks/default/...",
+  "projects": {
+    "agent-bus": "https://discord.com/api/webhooks/project-agent-bus/...",
+    "robotics": "https://discord.com/api/webhooks/project-robotics/..."
+  },
+  "repos": {
+    "my-app": "https://discord.com/api/webhooks/repo-my-app/..."
+  }
+}
+```
+
+Routing order is:
+
+```text
+task.project -> task.repo -> default
+```
+
+Create tasks with a project to route notifications:
+
+```bash
+/home/aspa/agent-bus/bin/agentctl task create "Fix login race" --project agent-bus
 ```
 
 Messages are sent with `allowed_mentions: {"parse": []}` to avoid accidental mentions from agent output.

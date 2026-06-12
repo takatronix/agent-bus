@@ -20,6 +20,8 @@ def build_task_prompt(task: dict[str, Any], extra: str | None = None) -> str:
     ]
     if task.get("body"):
         parts.extend(["", "Body:", task["body"]])
+    if task.get("project"):
+        parts.append(f"\nProject: {task['project']}")
     if task.get("repo"):
         parts.append(f"\nRepo: {task['repo']}")
     if task.get("branch"):

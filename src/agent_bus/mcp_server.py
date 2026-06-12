@@ -28,6 +28,7 @@ def _tool_create_task(arguments: dict[str, Any]) -> dict[str, Any]:
             "body": arguments.get("body", ""),
             "created_by": arguments.get("created_by", "mcp"),
             "priority": arguments.get("priority", "normal"),
+            "project": arguments.get("project"),
             "repo": arguments.get("repo"),
             "branch": arguments.get("branch"),
             "target_agent": arguments.get("target_agent"),
@@ -38,7 +39,7 @@ def _tool_create_task(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_list_tasks(arguments: dict[str, Any]) -> dict[str, Any]:
     params = [f"limit={arguments.get('limit', 20)}"]
-    for key in ("status", "owner", "target_agent"):
+    for key in ("status", "project", "owner", "target_agent"):
         if arguments.get(key):
             params.append(f"{key}={arguments[key]}")
     return _client().get(f"/tasks?{'&'.join(params)}")
@@ -54,7 +55,7 @@ def _tool_claim_task(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_update_task(arguments: dict[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {"actor": arguments.get("actor", "mcp"), "note": arguments.get("note", "")}
-    for key in ("status", "event_type", "branch", "owner"):
+    for key in ("status", "event_type", "project", "branch", "owner"):
         if arguments.get(key):
             payload[key] = arguments[key]
     return _client().post(f"/tasks/{arguments['task_id']}/update", payload)
@@ -132,6 +133,7 @@ TOOLS = [
                 "body": {"type": "string"},
                 "created_by": {"type": "string"},
                 "priority": {"type": "string"},
+                "project": {"type": "string"},
                 "repo": {"type": "string"},
                 "branch": {"type": "string"},
                 "target_agent": {"type": "string"},
@@ -147,6 +149,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "status": {"type": "string"},
+                "project": {"type": "string"},
                 "owner": {"type": "string"},
                 "target_agent": {"type": "string"},
                 "limit": {"type": "integer"},
@@ -182,6 +185,7 @@ TOOLS = [
                 "status": {"type": "string"},
                 "note": {"type": "string"},
                 "event_type": {"type": "string"},
+                "project": {"type": "string"},
                 "branch": {"type": "string"},
                 "owner": {"type": "string"},
             },
@@ -264,6 +268,7 @@ if FastMCP is not None:
         created_by: str = "mcp",
         priority: str = "normal",
         repo: str | None = None,
+        project: str | None = None,
         branch: str | None = None,
         target_agent: str | None = None,
         refs: list[str] | None = None,
@@ -276,6 +281,7 @@ if FastMCP is not None:
                 "body": body,
                 "created_by": created_by,
                 "priority": priority,
+                "project": project,
                 "repo": repo,
                 "branch": branch,
                 "target_agent": target_agent,
@@ -286,6 +292,7 @@ if FastMCP is not None:
     @mcp.tool()
     def list_tasks(
         status: str | None = None,
+        project: str | None = None,
         owner: str | None = None,
         target_agent: str | None = None,
         limit: int = 20,
@@ -294,6 +301,8 @@ if FastMCP is not None:
         params = [f"limit={limit}"]
         if status:
             params.append(f"status={status}")
+        if project:
+            params.append(f"project={project}")
         if owner:
             params.append(f"owner={owner}")
         if target_agent:
@@ -317,6 +326,7 @@ if FastMCP is not None:
         status: str | None = None,
         note: str = "",
         event_type: str | None = None,
+        project: str | None = None,
         branch: str | None = None,
         owner: str | None = None,
     ) -> dict[str, Any]:
@@ -326,6 +336,8 @@ if FastMCP is not None:
             payload["status"] = status
         if event_type:
             payload["event_type"] = event_type
+        if project:
+            payload["project"] = project
         if branch:
             payload["branch"] = branch
         if owner:

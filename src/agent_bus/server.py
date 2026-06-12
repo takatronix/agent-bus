@@ -51,6 +51,7 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                     {
                         "tasks": self.server.store.list_tasks(
                             status=_one(query, "status"),
+                            project=_one(query, "project"),
                             owner=_one(query, "owner"),
                             target_agent=_one(query, "target_agent"),
                             limit=_int(query, "limit", 50),
@@ -227,7 +228,7 @@ def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     settings = load_settings()
     store = Store(settings.db_path, settings.artifact_dir)
-    notifier = DiscordNotifier(settings.discord_webhook_url)
+    notifier = DiscordNotifier(settings.discord_webhook_url, settings.discord_webhook_routes)
     server = AgentBusHTTPServer((settings.host, settings.port), store, notifier, settings.token)
     print(f"agent-bus listening on http://{settings.host}:{settings.port}", file=sys.stderr)
     print(f"db: {settings.db_path}", file=sys.stderr)

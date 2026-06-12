@@ -44,6 +44,7 @@ class Store:
                     body TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'open',
                     priority TEXT NOT NULL DEFAULT 'normal',
+                    project TEXT,
                     repo TEXT,
                     branch TEXT,
                     created_by TEXT,
@@ -97,6 +98,13 @@ class Store:
                 CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
                 """
             )
+            self._migrate_db(conn)
+
+    def _migrate_db(self, conn: sqlite3.Connection) -> None:
+        task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        if "project" not in task_columns:
+            conn.execute("ALTER TABLE tasks ADD COLUMN project TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project)")
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = now_iso()
@@ -111,6 +119,7 @@ class Store:
             "body": payload.get("body", ""),
             "status": status,
             "priority": payload.get("priority", "normal"),
+            "project": payload.get("project"),
             "repo": payload.get("repo"),
             "branch": payload.get("branch"),
             "created_by": payload.get("created_by") or payload.get("actor") or "human",
@@ -127,11 +136,11 @@ class Store:
             conn.execute(
                 """
                 INSERT INTO tasks (
-                    id, title, body, status, priority, repo, branch, created_by, owner,
+                    id, title, body, status, priority, project, repo, branch, created_by, owner,
                     target_agent, claimed_by, claimed_at, refs_json, metadata_json,
                     created_at, updated_at
                 ) VALUES (
-                    :id, :title, :body, :status, :priority, :repo, :branch, :created_by,
+                    :id, :title, :body, :status, :priority, :project, :repo, :branch, :created_by,
                     :owner, :target_agent, :claimed_by, :claimed_at, :refs_json,
                     :metadata_json, :created_at, :updated_at
                 )
@@ -143,6 +152,7 @@ class Store:
     def list_tasks(
         self,
         status: str | None = None,
+        project: str | None = None,
         owner: str | None = None,
         target_agent: str | None = None,
         limit: int = 50,
@@ -152,6 +162,9 @@ class Store:
         if status:
             clauses.append("status = :status")
             params["status"] = status
+        if project:
+            clauses.append("project = :project")
+            params["project"] = project
         if owner:
             clauses.append("owner = :owner")
             params["owner"] = owner
@@ -196,6 +209,7 @@ class Store:
             "body",
             "status",
             "priority",
+            "project",
             "repo",
             "branch",
             "owner",

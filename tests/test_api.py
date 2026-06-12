@@ -26,11 +26,12 @@ class ApiTest(unittest.TestCase):
 
                 created = requests.post(
                     f"{base}/tasks",
-                    json={"title": "Wire agent bus", "body": "Build it"},
+                    json={"title": "Wire agent bus", "body": "Build it", "project": "agent-bus"},
                     timeout=5,
                 )
                 self.assertEqual(created.status_code, 201)
                 task = created.json()["task"]
+                self.assertEqual(task["project"], "agent-bus")
 
                 claimed = requests.post(
                     f"{base}/tasks/{task['id']}/claim",

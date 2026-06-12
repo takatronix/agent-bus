@@ -1,0 +1,10 @@
+{
+  "default": "",
+  "projects": {
+    "agent-bus": "https://discord.com/api/webhooks/PROJECT_AGENT_BUS/...",
+    "robotics": "https://discord.com/api/webhooks/PROJECT_ROBOTICS/..."
+  },
+  "repos": {
+    "daihen-physical-ai": "https://discord.com/api/webhooks/REPO_DAIHEN/..."
+  }
+}

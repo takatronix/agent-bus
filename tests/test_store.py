@@ -15,12 +15,15 @@ class StoreTest(unittest.TestCase):
                 {
                     "title": "Fix login",
                     "body": "Investigate refresh token race.",
+                    "project": "platform",
                     "created_by": "human",
                     "refs": ["file:src/auth.ts"],
                 }
             )
             self.assertEqual(task["status"], "open")
+            self.assertEqual(task["project"], "platform")
             self.assertEqual(task["refs"], ["file:src/auth.ts"])
+            self.assertEqual(store.list_tasks(project="platform")[0]["id"], task["id"])
 
             claimed = store.claim_task(task["id"], "codex-test")
             self.assertEqual(claimed["status"], "claimed")

@@ -18,6 +18,10 @@ def client() -> AgentBusClient:
     return AgentBusClient()
 
 
+def default_project() -> str | None:
+    return os.environ.get("AGENT_BUS_DEFAULT_PROJECT") or None
+
+
 def emit(data: Any, as_json: bool) -> None:
     if as_json:
         click.echo(json.dumps(data, ensure_ascii=False, indent=2))
@@ -41,7 +45,7 @@ def task() -> None:
 @click.option("--body-file", type=click.Path(exists=True, dir_okay=False), help="Read body from file.")
 @click.option("--created-by", default="human")
 @click.option("--priority", default="normal")
-@click.option("--project")
+@click.option("--project", default=default_project)
 @click.option("--repo")
 @click.option("--branch")
 @click.option("--target-agent")
@@ -81,7 +85,7 @@ def task_create(
 
 @task.command("list")
 @click.option("--status")
-@click.option("--project")
+@click.option("--project", default=default_project)
 @click.option("--owner")
 @click.option("--target-agent")
 @click.option("--limit", default=20)

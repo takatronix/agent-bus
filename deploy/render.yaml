@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: agent-bus
+    runtime: docker
+    plan: starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: AGENT_BUS_HOST
+        value: 0.0.0.0
+      - key: AGENT_BUS_DB
+        value: /data/agent-bus.sqlite3
+      - key: AGENT_BUS_ARTIFACT_DIR
+        value: /data/artifacts
+      - key: AGENT_BUS_TOKEN
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
+    disk:
+      name: agent-bus-data
+      mountPath: /data
+      sizeGB: 1

@@ -48,7 +48,19 @@ Default URL:
 http://127.0.0.1:8765
 ```
 
-For multiple machines, run Agent Bus on one host and expose it over Tailscale. Then set `AGENT_BUS_URL=http://tailscale-host:8765` on the other machines.
+For team use, publish Agent Bus as one HTTPS web service and give members `AGENT_BUS_URL` plus `AGENT_BUS_TOKEN`. See `deploy/`.
+
+Quick team-member setup:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/takatronix/agent-bus/main/scripts/team-connect.sh \
+  | AGENT_BUS_URL=https://your-agent-bus.example.com \
+    AGENT_BUS_TOKEN=<shared-write-token> \
+    AGENT_BUS_DEFAULT_PROJECT=agent-bus \
+    bash
+```
+
+This configures Claude Code, Cursor, and Codex MCP where those clients are installed.
 
 ## CLI
 

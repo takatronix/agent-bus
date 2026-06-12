@@ -232,6 +232,8 @@ def run() -> None:
     server = AgentBusHTTPServer((settings.host, settings.port), store, notifier, settings.token)
     print(f"agent-bus listening on http://{settings.host}:{settings.port}", file=sys.stderr)
     print(f"db: {settings.db_path}", file=sys.stderr)
+    if settings.host != "127.0.0.1" and not settings.token:
+        print("warning: AGENT_BUS_TOKEN is empty while binding to a non-local host", file=sys.stderr)
     if notifier.enabled():
         print("discord webhook: enabled", file=sys.stderr)
     else:

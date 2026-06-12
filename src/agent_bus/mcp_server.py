@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from typing import Any, Callable
 
@@ -11,6 +12,10 @@ from .config import load_dotenv
 def _client() -> AgentBusClient:
     load_dotenv()
     return AgentBusClient()
+
+
+def _default_project() -> str | None:
+    return os.environ.get("AGENT_BUS_DEFAULT_PROJECT") or None
 
 
 INSTRUCTIONS = (
@@ -28,7 +33,7 @@ def _tool_create_task(arguments: dict[str, Any]) -> dict[str, Any]:
             "body": arguments.get("body", ""),
             "created_by": arguments.get("created_by", "mcp"),
             "priority": arguments.get("priority", "normal"),
-            "project": arguments.get("project"),
+            "project": arguments.get("project") or _default_project(),
             "repo": arguments.get("repo"),
             "branch": arguments.get("branch"),
             "target_agent": arguments.get("target_agent"),
@@ -39,6 +44,8 @@ def _tool_create_task(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_list_tasks(arguments: dict[str, Any]) -> dict[str, Any]:
     params = [f"limit={arguments.get('limit', 20)}"]
+    if not arguments.get("project") and _default_project():
+        arguments = {**arguments, "project": _default_project()}
     for key in ("status", "project", "owner", "target_agent"):
         if arguments.get(key):
             params.append(f"{key}={arguments[key]}")
@@ -281,7 +288,7 @@ if FastMCP is not None:
                 "body": body,
                 "created_by": created_by,
                 "priority": priority,
-                "project": project,
+                "project": project or _default_project(),
                 "repo": repo,
                 "branch": branch,
                 "target_agent": target_agent,
@@ -299,6 +306,7 @@ if FastMCP is not None:
     ) -> dict[str, Any]:
         """List tasks, optionally filtering by status, owner, or target agent."""
         params = [f"limit={limit}"]
+        project = project or _default_project()
         if status:
             params.append(f"status={status}")
         if project:

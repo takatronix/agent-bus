@@ -1,0 +1,19 @@
+services:
+  agent-bus:
+    build: .
+    ports:
+      - "8765:8765"
+    environment:
+      AGENT_BUS_HOST: 0.0.0.0
+      AGENT_BUS_PORT: 8765
+      AGENT_BUS_DB: /data/agent-bus.sqlite3
+      AGENT_BUS_ARTIFACT_DIR: /data/artifacts
+      AGENT_BUS_TOKEN: ${AGENT_BUS_TOKEN:?set AGENT_BUS_TOKEN}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+      DISCORD_WEBHOOK_ROUTES: ${DISCORD_WEBHOOK_ROUTES:-}
+    volumes:
+      - agent-bus-data:/data
+    restart: unless-stopped
+
+volumes:
+  agent-bus-data:

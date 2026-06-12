@@ -40,7 +40,7 @@ def load_settings() -> Settings:
         db_path=db_path,
         artifact_dir=artifact_dir,
         host=os.environ.get("AGENT_BUS_HOST", "127.0.0.1"),
-        port=int(os.environ.get("AGENT_BUS_PORT", "8765")),
+        port=int(os.environ.get("AGENT_BUS_PORT") or os.environ.get("PORT", "8765")),
         discord_webhook_url=os.environ.get("DISCORD_WEBHOOK_URL") or None,
         discord_webhook_routes=_optional_path(os.environ.get("DISCORD_WEBHOOK_ROUTES")),
         token=os.environ.get("AGENT_BUS_TOKEN") or None,

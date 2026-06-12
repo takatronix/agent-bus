@@ -41,6 +41,8 @@ openssl rand -hex 32
 
 一番簡単です。Render、Railway、Fly.io などを使います。アプリは platform 内では HTTP で待ち受け、platform が HTTPS を提供します。
 
+Render ではリポジトリ直下の `render.yaml` を Blueprint として使えます。Dashboard で `New > Blueprint` を選び、この repository を接続してください。
+
 必要な environment:
 
 ```text

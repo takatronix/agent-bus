@@ -1,0 +1,34 @@
+[project]
+name = "agent-bus"
+version = "0.1.0"
+description = "Small coordination bus for AI agents with HTTP, CLI, Discord webhook, and MCP adapters."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "click>=8.1",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+mcp = [
+  "mcp>=1.27.2",
+]
+test = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+agent-bus = "agent_bus.server:main"
+agentctl = "agent_bus.cli:main"
+agent-bus-mcp = "agent_bus.mcp_server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

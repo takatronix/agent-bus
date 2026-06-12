@@ -1,0 +1,15 @@
+[Unit]
+Description=Agent Bus
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/aspa/agent-bus
+EnvironmentFile=-/home/aspa/agent-bus/.env
+ExecStart=/home/aspa/agent-bus/bin/agent-bus
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

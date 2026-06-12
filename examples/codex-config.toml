@@ -1,0 +1,9 @@
+# Add this to ~/.codex/config.toml after installing agent-bus.
+# The same config is shared by Codex CLI and the Codex IDE extension.
+
+[mcp_servers.agent_bus]
+command = "/home/aspa/agent-bus/bin/agent-bus-mcp"
+env = { AGENT_BUS_URL = "http://127.0.0.1:8765" }
+
+# If you set AGENT_BUS_TOKEN on the server, also pass it here:
+# env = { AGENT_BUS_URL = "http://127.0.0.1:8765", AGENT_BUS_TOKEN = "change-me" }

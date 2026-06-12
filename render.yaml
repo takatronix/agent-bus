@@ -17,8 +17,6 @@ services:
         sync: false
       - key: AGENT_BUS_PUBLIC_READ
         value: false
-      - key: DISCORD_WEBHOOK_URL
-        sync: false
     disk:
       name: agent-bus-data
       mountPath: /data

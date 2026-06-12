@@ -21,6 +21,8 @@ Required environment:
 ```text
 AGENT_BUS_HOST=0.0.0.0
 AGENT_BUS_TOKEN=<long random token>
+AGENT_BUS_READ_TOKEN=<optional read-only browser token>
+AGENT_BUS_PUBLIC_READ=false
 AGENT_BUS_DB=/data/agent-bus.sqlite3
 AGENT_BUS_ARTIFACT_DIR=/data/artifacts
 DISCORD_WEBHOOK_URL=<fallback webhook, optional>
@@ -76,3 +78,23 @@ Codex MCP, if installed
 ```
 
 Then reload the AI client.
+
+## Project History UI
+
+Open the service in a browser:
+
+```text
+https://your-agent-bus.example.com
+```
+
+If `AGENT_BUS_PUBLIC_READ=false` and `AGENT_BUS_READ_TOKEN` is set, use:
+
+```text
+https://your-agent-bus.example.com?read_token=<read-token>
+```
+
+Project pages are:
+
+```text
+https://your-agent-bus.example.com/projects/<project-name>
+```

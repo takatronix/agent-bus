@@ -58,8 +58,19 @@ class Store:
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS projects (
+                    name TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    metadata_json TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS events (
                     id TEXT PRIMARY KEY,
+                    project TEXT,
                     task_id TEXT,
                     type TEXT NOT NULL,
                     actor TEXT NOT NULL,
@@ -94,6 +105,7 @@ class Store:
 
                 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
                 CREATE INDEX IF NOT EXISTS idx_tasks_owner ON tasks(owner);
+                CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
                 CREATE INDEX IF NOT EXISTS idx_events_task_id_created_at ON events(task_id, created_at);
                 CREATE INDEX IF NOT EXISTS idx_artifacts_task_id ON artifacts(task_id);
                 """
@@ -105,6 +117,115 @@ class Store:
         if "project" not in task_columns:
             conn.execute("ALTER TABLE tasks ADD COLUMN project TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project)")
+        event_columns = {row["name"] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+        if "project" not in event_columns:
+            conn.execute("ALTER TABLE events ADD COLUMN project TEXT")
+            conn.execute(
+                """
+                UPDATE events
+                SET project = (
+                    SELECT tasks.project FROM tasks WHERE tasks.id = events.task_id
+                )
+                WHERE task_id IS NOT NULL
+                """
+            )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_events_project_created_at ON events(project, created_at)")
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
+            SELECT DISTINCT project, project, '', 'active', '{}', ?, ?
+            FROM tasks
+            WHERE project IS NOT NULL AND project != ''
+            """,
+            (now_iso(), now_iso()),
+        )
+
+    def create_project(self, payload: dict[str, Any]) -> dict[str, Any]:
+        now = now_iso()
+        name = payload["name"]
+        row = {
+            "name": name,
+            "title": payload.get("title") or name,
+            "description": payload.get("description", ""),
+            "status": payload.get("status", "active"),
+            "metadata_json": dumps(payload.get("metadata", {})),
+            "created_at": now,
+            "updated_at": now,
+        }
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
+                VALUES (:name, :title, :description, :status, :metadata_json, :created_at, :updated_at)
+                ON CONFLICT(name) DO UPDATE SET
+                    title = excluded.title,
+                    description = excluded.description,
+                    status = excluded.status,
+                    metadata_json = excluded.metadata_json,
+                    updated_at = excluded.updated_at
+                """,
+                row,
+            )
+        return self.get_project(name)
+
+    def ensure_project(self, name: str | None) -> None:
+        if not name:
+            return
+        now = now_iso()
+        with self.connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
+                VALUES (?, ?, '', 'active', '{}', ?, ?)
+                """,
+                (name, name, now, now),
+            )
+
+    def list_projects(self, limit: int = 100) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    projects.*,
+                    COUNT(tasks.id) AS task_count,
+                    SUM(CASE WHEN tasks.status IN ('open', 'claimed', 'running', 'blocked', 'review_requested')
+                        THEN 1 ELSE 0 END) AS active_task_count
+                FROM projects
+                LEFT JOIN tasks ON tasks.project = projects.name
+                GROUP BY projects.name
+                ORDER BY projects.updated_at DESC
+                LIMIT ?
+                """,
+                (min(max(limit, 1), 500),),
+            ).fetchall()
+        return [self._project_from_row(row) for row in rows]
+
+    def get_project(self, name: str) -> dict[str, Any]:
+        with self.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT
+                    projects.*,
+                    COUNT(tasks.id) AS task_count,
+                    SUM(CASE WHEN tasks.status IN ('open', 'claimed', 'running', 'blocked', 'review_requested')
+                        THEN 1 ELSE 0 END) AS active_task_count
+                FROM projects
+                LEFT JOIN tasks ON tasks.project = projects.name
+                WHERE projects.name = ?
+                GROUP BY projects.name
+                """,
+                (name,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(name)
+        return self._project_from_row(row)
+
+    def project_history(self, name: str, limit: int = 100) -> dict[str, Any]:
+        return {
+            "project": self.get_project(name),
+            "tasks": self.list_tasks(project=name, limit=min(max(limit, 1), 200)),
+            "events": self.list_events(project=name, limit=min(max(limit, 1), 500)),
+        }
 
     def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = now_iso()
@@ -133,6 +254,14 @@ class Store:
             "updated_at": now,
         }
         with self.connect() as conn:
+            if row["project"]:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
+                    VALUES (?, ?, '', 'active', '{}', ?, ?)
+                    """,
+                    (row["project"], row["project"], now, now),
+                )
             conn.execute(
                 """
                 INSERT INTO tasks (
@@ -229,6 +358,14 @@ class Store:
         parts = ", ".join(f"{key} = :{key}" for key in updates)
         updates["id"] = task_id
         with self.connect() as conn:
+            if updates.get("project"):
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
+                    VALUES (?, ?, '', 'active', '{}', ?, ?)
+                    """,
+                    (updates["project"], updates["project"], now, now),
+                )
             cur = conn.execute(f"UPDATE tasks SET {parts} WHERE id = :id", updates)
             if cur.rowcount == 0:
                 raise KeyError(task_id)
@@ -236,8 +373,18 @@ class Store:
 
     def create_event(self, payload: dict[str, Any]) -> dict[str, Any]:
         now = now_iso()
+        data = payload.get("data", {})
+        project = payload.get("project")
+        if project is None and isinstance(data, dict):
+            project = data.get("project")
+        if project is None and payload.get("task_id"):
+            try:
+                project = self.get_task(payload["task_id"]).get("project")
+            except KeyError:
+                project = None
         row = {
             "id": payload.get("id") or new_id("evt"),
+            "project": project,
             "task_id": payload.get("task_id"),
             "type": payload.get("type", "message"),
             "actor": payload.get("actor") or payload.get("from") or "unknown",
@@ -245,30 +392,49 @@ class Store:
             "body": payload.get("body", ""),
             "severity": payload.get("severity", "info"),
             "refs_json": dumps(payload.get("refs", [])),
-            "data_json": dumps(payload.get("data", {})),
+            "data_json": dumps(data),
             "created_at": now,
         }
         with self.connect() as conn:
+            if row["project"]:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
+                    VALUES (?, ?, '', 'active', '{}', ?, ?)
+                    """,
+                    (row["project"], row["project"], now, now),
+                )
             conn.execute(
                 """
                 INSERT INTO events (
-                    id, task_id, type, actor, target, body, severity, refs_json, data_json, created_at
+                    id, project, task_id, type, actor, target, body, severity, refs_json, data_json, created_at
                 ) VALUES (
-                    :id, :task_id, :type, :actor, :target, :body, :severity, :refs_json, :data_json, :created_at
+                    :id, :project, :task_id, :type, :actor, :target, :body, :severity, :refs_json, :data_json, :created_at
                 )
                 """,
                 row,
             )
             if row["task_id"]:
                 conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (now, row["task_id"]))
+            if row["project"]:
+                conn.execute("UPDATE projects SET updated_at = ? WHERE name = ?", (now, row["project"]))
         return self.get_event(row["id"])
 
-    def list_events(self, task_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
+    def list_events(
+        self,
+        task_id: str | None = None,
+        project: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
         params: dict[str, Any] = {"limit": min(max(limit, 1), 500)}
-        where = ""
+        clauses: list[str] = []
         if task_id:
-            where = "WHERE task_id = :task_id"
+            clauses.append("task_id = :task_id")
             params["task_id"] = task_id
+        if project:
+            clauses.append("project = :project")
+            params["project"] = project
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self.connect() as conn:
             rows = conn.execute(
                 f"SELECT * FROM events {where} ORDER BY created_at DESC LIMIT :limit", params
@@ -386,6 +552,13 @@ class Store:
     def _artifact_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
         item = dict(row)
         item["metadata"] = loads(item.pop("metadata_json"), {})
+        return item
+
+    def _project_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        item = dict(row)
+        item["metadata"] = loads(item.pop("metadata_json"), {})
+        item["task_count"] = item.get("task_count") or 0
+        item["active_task_count"] = item.get("active_task_count") or 0
         return item
 
     def _agent_from_row(self, row: sqlite3.Row) -> dict[str, Any]:

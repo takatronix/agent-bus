@@ -35,6 +35,58 @@ def main() -> None:
 
 
 @main.group()
+def project() -> None:
+    """Create, list, and inspect projects."""
+
+
+@project.command("create")
+@click.argument("name")
+@click.option("--title")
+@click.option("--description", default="")
+@click.option("--status", default="active")
+@click.option("--json", "as_json", is_flag=True)
+def project_create(name: str, title: str | None, description: str, status: str, as_json: bool) -> None:
+    data = client().post(
+        "/projects",
+        {"name": name, "title": title or name, "description": description, "status": status},
+    )["project"]
+    emit(data if as_json else f"{data['name']} {data['status']} {data['title']}", as_json)
+
+
+@project.command("list")
+@click.option("--limit", default=50)
+@click.option("--json", "as_json", is_flag=True)
+def project_list(limit: int, as_json: bool) -> None:
+    data = client().get(f"/projects?limit={limit}")["projects"]
+    emit(
+        data
+        if as_json
+        else table(data, ["name", "status", "active_task_count", "task_count", "title"]),
+        as_json,
+    )
+
+
+@project.command("show")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True)
+def project_show(name: str, as_json: bool) -> None:
+    data = client().get(f"/projects/{name}")["project"]
+    emit(data, True if as_json else True)
+
+
+@project.command("history")
+@click.argument("name")
+@click.option("--limit", default=50)
+@click.option("--json", "as_json", is_flag=True)
+def project_history(name: str, limit: int, as_json: bool) -> None:
+    data = client().get(f"/projects/{name}/history?limit={limit}")
+    if as_json:
+        emit(data, True)
+        return
+    emit(table(data["events"], ["created_at", "actor", "type", "body"]), False)
+
+
+@main.group()
 def task() -> None:
     """Create, list, claim, and update tasks."""
 
@@ -175,6 +227,7 @@ def event() -> None:
 
 @event.command("post")
 @click.option("--task-id")
+@click.option("--project", default=default_project)
 @click.option("--type", "event_type", default="message")
 @click.option("--actor", default=lambda: default_agent_name("agent"), show_default="agent-hostname")
 @click.option("--target")
@@ -185,6 +238,7 @@ def event() -> None:
 @click.option("--json", "as_json", is_flag=True)
 def event_post(
     task_id: str | None,
+    project: str | None,
     event_type: str,
     actor: str,
     target: str | None,
@@ -200,6 +254,7 @@ def event_post(
         "/events",
         {
             "task_id": task_id,
+            "project": project,
             "type": event_type,
             "actor": actor,
             "target": target,
@@ -213,14 +268,20 @@ def event_post(
 
 @event.command("list")
 @click.option("--task-id")
+@click.option("--project", default=default_project)
 @click.option("--limit", default=20)
 @click.option("--json", "as_json", is_flag=True)
-def event_list(task_id: str | None, limit: int, as_json: bool) -> None:
+def event_list(task_id: str | None, project: str | None, limit: int, as_json: bool) -> None:
     params = [f"limit={limit}"]
     if task_id:
         params.append(f"task_id={task_id}")
+    if project:
+        params.append(f"project={project}")
     data = client().get(f"/events?{'&'.join(params)}")["events"]
-    emit(data if as_json else table(data, ["id", "task_id", "type", "actor", "severity", "created_at"]), as_json)
+    emit(
+        data if as_json else table(data, ["id", "project", "task_id", "type", "actor", "severity", "created_at"]),
+        as_json,
+    )
 
 
 @main.group()

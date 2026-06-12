@@ -29,6 +29,8 @@ class Settings:
     discord_webhook_url: str | None
     discord_webhook_routes: Path | None
     token: str | None
+    read_token: str | None
+    public_read: bool
 
 
 def load_settings() -> Settings:
@@ -44,6 +46,8 @@ def load_settings() -> Settings:
         discord_webhook_url=os.environ.get("DISCORD_WEBHOOK_URL") or None,
         discord_webhook_routes=_optional_path(os.environ.get("DISCORD_WEBHOOK_ROUTES")),
         token=os.environ.get("AGENT_BUS_TOKEN") or None,
+        read_token=os.environ.get("AGENT_BUS_READ_TOKEN") or None,
+        public_read=os.environ.get("AGENT_BUS_PUBLIC_READ", "").lower() in {"1", "true", "yes", "on"},
     )
 
 

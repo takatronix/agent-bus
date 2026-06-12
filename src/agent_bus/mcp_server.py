@@ -42,6 +42,27 @@ def _tool_create_task(arguments: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _tool_create_project(arguments: dict[str, Any]) -> dict[str, Any]:
+    return _client().post(
+        "/projects",
+        {
+            "name": arguments["name"],
+            "title": arguments.get("title") or arguments["name"],
+            "description": arguments.get("description", ""),
+            "status": arguments.get("status", "active"),
+            "metadata": arguments.get("metadata") or {},
+        },
+    )
+
+
+def _tool_list_projects(arguments: dict[str, Any]) -> dict[str, Any]:
+    return _client().get(f"/projects?limit={arguments.get('limit', 50)}")
+
+
+def _tool_get_project_history(arguments: dict[str, Any]) -> dict[str, Any]:
+    return _client().get(f"/projects/{arguments['name']}/history?limit={arguments.get('limit', 50)}")
+
+
 def _tool_list_tasks(arguments: dict[str, Any]) -> dict[str, Any]:
     params = [f"limit={arguments.get('limit', 20)}"]
     if not arguments.get("project") and _default_project():
@@ -73,6 +94,7 @@ def _tool_post_event(arguments: dict[str, Any]) -> dict[str, Any]:
         "/events",
         {
             "task_id": arguments.get("task_id"),
+            "project": arguments.get("project") or _default_project(),
             "type": arguments.get("event_type", "message"),
             "actor": arguments["actor"],
             "target": arguments.get("target"),
@@ -87,6 +109,8 @@ def _tool_list_events(arguments: dict[str, Any]) -> dict[str, Any]:
     params = [f"limit={arguments.get('limit', 20)}"]
     if arguments.get("task_id"):
         params.append(f"task_id={arguments['task_id']}")
+    if arguments.get("project") or _default_project():
+        params.append(f"project={arguments.get('project') or _default_project()}")
     return _client().get(f"/events?{'&'.join(params)}")
 
 
@@ -117,6 +141,9 @@ def _tool_heartbeat_agent(arguments: dict[str, Any]) -> dict[str, Any]:
 
 
 TOOL_HANDLERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
+    "create_project": _tool_create_project,
+    "list_projects": _tool_list_projects,
+    "get_project_history": _tool_get_project_history,
     "create_task": _tool_create_task,
     "list_tasks": _tool_list_tasks,
     "get_task": _tool_get_task,
@@ -130,6 +157,38 @@ TOOL_HANDLERS: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {
 
 
 TOOLS = [
+    {
+        "name": "create_project",
+        "description": "Create or update a project namespace for tasks and history.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "title": {"type": "string"},
+                "description": {"type": "string"},
+                "status": {"type": "string"},
+                "metadata": {"type": "object"},
+            },
+            "required": ["name"],
+        },
+    },
+    {
+        "name": "list_projects",
+        "description": "List project namespaces with task counts.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer"}},
+        },
+    },
+    {
+        "name": "get_project_history",
+        "description": "Read a project's tasks and event history.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"name": {"type": "string"}, "limit": {"type": "integer"}},
+            "required": ["name"],
+        },
+    },
     {
         "name": "create_task",
         "description": "Create a task for an agent to claim and work on.",
@@ -208,6 +267,7 @@ TOOLS = [
                 "actor": {"type": "string"},
                 "body": {"type": "string"},
                 "task_id": {"type": "string"},
+                "project": {"type": "string"},
                 "event_type": {"type": "string"},
                 "target": {"type": "string"},
                 "severity": {"type": "string"},
@@ -221,7 +281,11 @@ TOOLS = [
         "description": "List recent events, optionally for one task.",
         "inputSchema": {
             "type": "object",
-            "properties": {"task_id": {"type": "string"}, "limit": {"type": "integer"}},
+            "properties": {
+                "task_id": {"type": "string"},
+                "project": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
         },
     },
     {
@@ -267,6 +331,29 @@ if FastMCP is not None:
         "agent-bus",
         instructions=INSTRUCTIONS,
     )
+
+    @mcp.tool()
+    def create_project(
+        name: str,
+        title: str | None = None,
+        description: str = "",
+        status: str = "active",
+    ) -> dict[str, Any]:
+        """Create or update a project namespace for tasks and history."""
+        return _client().post(
+            "/projects",
+            {"name": name, "title": title or name, "description": description, "status": status},
+        )
+
+    @mcp.tool()
+    def list_projects(limit: int = 50) -> dict[str, Any]:
+        """List project namespaces with task counts."""
+        return _client().get(f"/projects?limit={limit}")
+
+    @mcp.tool()
+    def get_project_history(name: str, limit: int = 50) -> dict[str, Any]:
+        """Read a project's tasks and event history."""
+        return _client().get(f"/projects/{name}/history?limit={limit}")
 
     @mcp.tool()
     def create_task(
@@ -357,6 +444,7 @@ if FastMCP is not None:
         actor: str,
         body: str,
         task_id: str | None = None,
+        project: str | None = None,
         event_type: str = "message",
         target: str | None = None,
         severity: str = "info",
@@ -367,6 +455,7 @@ if FastMCP is not None:
             "/events",
             {
                 "task_id": task_id,
+                "project": project or _default_project(),
                 "type": event_type,
                 "actor": actor,
                 "target": target,
@@ -377,11 +466,18 @@ if FastMCP is not None:
         )
 
     @mcp.tool()
-    def list_events(task_id: str | None = None, limit: int = 20) -> dict[str, Any]:
+    def list_events(
+        task_id: str | None = None,
+        project: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
         """List recent events, optionally for one task."""
         params = [f"limit={limit}"]
         if task_id:
             params.append(f"task_id={task_id}")
+        project = project or _default_project()
+        if project:
+            params.append(f"project={project}")
         return _client().get(f"/events?{'&'.join(params)}")
 
     @mcp.tool()

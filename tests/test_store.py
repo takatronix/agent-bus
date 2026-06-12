@@ -24,6 +24,7 @@ class StoreTest(unittest.TestCase):
             self.assertEqual(task["project"], "platform")
             self.assertEqual(task["refs"], ["file:src/auth.ts"])
             self.assertEqual(store.list_tasks(project="platform")[0]["id"], task["id"])
+            self.assertEqual(store.get_project("platform")["task_count"], 1)
 
             claimed = store.claim_task(task["id"], "codex-test")
             self.assertEqual(claimed["status"], "claimed")
@@ -38,7 +39,9 @@ class StoreTest(unittest.TestCase):
                 }
             )
             self.assertEqual(event["task_id"], task["id"])
+            self.assertEqual(event["project"], "platform")
             self.assertEqual(store.list_events(task["id"])[0]["id"], event["id"])
+            self.assertEqual(store.list_events(project="platform")[0]["id"], event["id"])
 
             artifact = store.create_artifact(
                 {
@@ -53,6 +56,19 @@ class StoreTest(unittest.TestCase):
 
             done = store.update_task(task["id"], {"status": "done"})
             self.assertEqual(done["status"], "done")
+            history = store.project_history("platform")
+            self.assertEqual(history["project"]["name"], "platform")
+            self.assertEqual(history["tasks"][0]["id"], task["id"])
+
+    def test_project_crud(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Store(Path(tmp) / "bus.sqlite3")
+            project = store.create_project(
+                {"name": "agent-bus", "title": "Agent Bus", "description": "Coordination"}
+            )
+            self.assertEqual(project["name"], "agent-bus")
+            self.assertEqual(project["title"], "Agent Bus")
+            self.assertEqual(store.list_projects()[0]["name"], "agent-bus")
 
     def test_rejects_double_claim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

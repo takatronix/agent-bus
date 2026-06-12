@@ -24,6 +24,13 @@ class ApiTest(unittest.TestCase):
                 health = requests.get(f"{base}/healthz", timeout=5)
                 self.assertEqual(health.status_code, 200)
 
+                project_created = requests.post(
+                    f"{base}/projects",
+                    json={"name": "agent-bus", "title": "Agent Bus"},
+                    timeout=5,
+                )
+                self.assertEqual(project_created.status_code, 201)
+
                 created = requests.post(
                     f"{base}/tasks",
                     json={"title": "Wire agent bus", "body": "Build it", "project": "agent-bus"},
@@ -56,6 +63,14 @@ class ApiTest(unittest.TestCase):
                 events = requests.get(f"{base}/events?task_id={task['id']}", timeout=5)
                 self.assertEqual(events.status_code, 200)
                 self.assertGreaterEqual(len(events.json()["events"]), 2)
+
+                history = requests.get(f"{base}/projects/agent-bus/history", timeout=5)
+                self.assertEqual(history.status_code, 200)
+                self.assertEqual(history.json()["project"]["name"], "agent-bus")
+
+                html = requests.get(f"{base}/projects/agent-bus", headers={"Accept": "text/html"}, timeout=5)
+                self.assertEqual(html.status_code, 200)
+                self.assertIn("Agent Bus", html.text)
             finally:
                 server.shutdown()
                 server.server_close()

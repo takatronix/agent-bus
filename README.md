@@ -62,6 +62,47 @@ curl -fsSL https://raw.githubusercontent.com/takatronix/agent-bus/main/scripts/t
 
 This configures Claude Code, Cursor, and Codex MCP where those clients are installed.
 
+The server also exposes a read-only project history UI:
+
+```text
+GET /
+GET /projects/<project-name>
+GET /projects/<project-name>/history
+```
+
+Create a project, then put tasks/events under it:
+
+```bash
+/home/aspa/agent-bus/bin/agentctl project create agent-bus \
+  --title "Agent Bus" \
+  --description "Shared AI coordination"
+
+/home/aspa/agent-bus/bin/agentctl task create "Wire Cursor" \
+  --project agent-bus \
+  --target-agent cursor
+
+/home/aspa/agent-bus/bin/agentctl project history agent-bus
+```
+
+For a browser-facing shared history, set either:
+
+```text
+AGENT_BUS_PUBLIC_READ=true
+```
+
+or a read-only token:
+
+```text
+AGENT_BUS_READ_TOKEN=<read-token>
+```
+
+Then open:
+
+```text
+https://your-agent-bus.example.com?read_token=<read-token>
+https://your-agent-bus.example.com/projects/agent-bus?read_token=<read-token>
+```
+
 ## CLI
 
 ```bash
@@ -123,6 +164,10 @@ Main endpoints:
 
 ```text
 GET  /healthz
+POST /projects
+GET  /projects
+GET  /projects/{name}
+GET  /projects/{name}/history
 POST /tasks
 GET  /tasks
 GET  /tasks/{id}

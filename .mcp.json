@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agent-bus": {
+      "type": "stdio",
+      "command": "/home/aspa/agent-bus/bin/agent-bus-mcp",
+      "args": [],
+      "env": {
+        "AGENT_BUS_URL": "http://127.0.0.1:8765"
+      }
+    }
+  }
+}

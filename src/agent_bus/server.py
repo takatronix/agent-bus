@@ -7,7 +7,7 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from .config import load_settings
 from .discord import DiscordNotifier, EVENT_SEVERITY
@@ -42,10 +42,10 @@ class AgentBusHandler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             if not self._authorized(method, path, query):
                 raise ApiError(HTTPStatus.UNAUTHORIZED, "missing or invalid Agent Bus token")
-            body = self._read_json() if method == "POST" else {}
+            body = self._read_body() if method == "POST" else {}
 
             if method == "GET" and path == "/":
-                self._send_html(self._projects_html())
+                self._send_html(self._projects_html(query))
                 return
             if method == "GET" and path == "/healthz":
                 self._send({"ok": True, "service": "agent-bus"})
@@ -57,6 +57,41 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                 project = self.server.store.create_project(body)
                 self._send({"project": project}, HTTPStatus.CREATED)
                 return
+            if method == "POST" and path.startswith("/projects/") and path.endswith("/discord-webhook"):
+                name = unquote(path.split("/")[2])
+                webhook_url = body.get("discord_webhook_url") or body.get("webhook_url") or ""
+                clear = str(body.get("clear", "")).lower() in {"1", "true", "yes", "on"}
+                project = self.server.store.set_project_discord_webhook(name, None if clear else webhook_url)
+                accept = self.headers.get("Accept", "")
+                content_type = self.headers.get("Content-Type", "")
+                if "text/html" in accept or "application/x-www-form-urlencoded" in content_type:
+                    suffix = f"?token={quote(_one(query, 'token') or '')}" if _one(query, "token") else ""
+                    self.send_response(303)
+                    self.send_header("Location", f"/projects/{quote(name)}{suffix}")
+                    self.end_headers()
+                else:
+                    self._send({"project": project})
+                return
+            if method == "POST" and path.startswith("/projects/") and path.endswith("/settings"):
+                name = unquote(path.split("/")[2])
+                project = self.server.store.create_project(
+                    {
+                        "name": name,
+                        "title": body.get("title") or name,
+                        "description": body.get("description", ""),
+                        "status": body.get("status", "active"),
+                    }
+                )
+                accept = self.headers.get("Accept", "")
+                content_type = self.headers.get("Content-Type", "")
+                if "text/html" in accept or "application/x-www-form-urlencoded" in content_type:
+                    suffix = f"?token={quote(_one(query, 'token') or '')}" if _one(query, "token") else ""
+                    self.send_response(303)
+                    self.send_header("Location", f"/projects/{quote(name)}{suffix}")
+                    self.end_headers()
+                else:
+                    self._send({"project": project})
+                return
             if method == "GET" and path.startswith("/projects/") and path.endswith("/history"):
                 name = unquote(path.split("/")[2])
                 self._send(self.server.store.project_history(name, limit=_int(query, "limit", 100)))
@@ -65,7 +100,7 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                 name = unquote(path.split("/", 2)[2])
                 accept = self.headers.get("Accept", "")
                 if "text/html" in accept or not accept:
-                    self._send_html(self._project_html(name, limit=_int(query, "limit", 100)))
+                    self._send_html(self._project_html(name, query=query, limit=_int(query, "limit", 100)))
                 else:
                     self._send({"project": self.server.store.get_project(name)})
                 return
@@ -84,7 +119,11 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                 return
             if method == "POST" and path == "/tasks":
                 task = self.server.store.create_task(body)
-                self.server.notifier.notify_task(task, "task_created")
+                self.server.notifier.notify_task(
+                    task,
+                    "task_created",
+                    webhook_url=self._project_webhook_for(task=task),
+                )
                 self._send({"task": task}, HTTPStatus.CREATED)
                 return
             if method == "GET" and path.startswith("/tasks/"):
@@ -104,7 +143,7 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                         "body": f"{agent} claimed {task_id}",
                     }
                 )
-                self.server.notifier.notify_event(event, task)
+                self.server.notifier.notify_event(event, task, webhook_url=self._project_webhook_for(event=event, task=task))
                 self._send({"task": task, "event": event})
                 return
             if method == "POST" and path.startswith("/tasks/") and path.endswith("/update"):
@@ -121,7 +160,7 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                         "severity": EVENT_SEVERITY.get(event_type, "info"),
                     }
                 )
-                self.server.notifier.notify_event(event, task)
+                self.server.notifier.notify_event(event, task, webhook_url=self._project_webhook_for(event=event, task=task))
                 self._send({"task": task, "event": event})
                 return
             if method == "GET" and path == "/events":
@@ -143,7 +182,7 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                         task = self.server.store.get_task(event["task_id"])
                     except KeyError:
                         task = None
-                self.server.notifier.notify_event(event, task)
+                self.server.notifier.notify_event(event, task, webhook_url=self._project_webhook_for(event=event, task=task))
                 self._send({"event": event}, HTTPStatus.CREATED)
                 return
             if method == "GET" and path == "/artifacts":
@@ -172,7 +211,7 @@ class AgentBusHandler(BaseHTTPRequestHandler):
                         task = self.server.store.get_task(artifact["task_id"])
                     except KeyError:
                         task = None
-                    self.server.notifier.notify_event(event, task)
+                    self.server.notifier.notify_event(event, task, webhook_url=self._project_webhook_for(event=event, task=task))
                 self._send({"artifact": artifact}, HTTPStatus.CREATED)
                 return
             if method == "GET" and path == "/agents":
@@ -213,11 +252,15 @@ class AgentBusHandler(BaseHTTPRequestHandler):
             valid_tokens = [self.server.token] if self.server.token else []
         return any(auth == f"Bearer {value}" or token == value or query_token == value for value in valid_tokens)
 
-    def _read_json(self) -> dict[str, Any]:
+    def _read_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         if length == 0:
             return {}
         raw = self.rfile.read(length)
+        content_type = self.headers.get("Content-Type", "")
+        if "application/x-www-form-urlencoded" in content_type:
+            parsed = parse_qs(raw.decode("utf-8"), keep_blank_values=True)
+            return {key: values[-1] if values else "" for key, values in parsed.items()}
         try:
             value = json.loads(raw.decode("utf-8"))
         except json.JSONDecodeError as exc:
@@ -225,6 +268,15 @@ class AgentBusHandler(BaseHTTPRequestHandler):
         if not isinstance(value, dict):
             raise ApiError(HTTPStatus.BAD_REQUEST, "JSON body must be an object")
         return value
+
+    def _project_webhook_for(
+        self,
+        event: dict[str, Any] | None = None,
+        task: dict[str, Any] | None = None,
+    ) -> str | None:
+        data = event.get("data") if event and isinstance(event.get("data"), dict) else {}
+        project = (task or {}).get("project") or (event or {}).get("project") or data.get("project")
+        return self.server.store.get_project_discord_webhook(project)
 
     def _send(self, value: dict[str, Any], status: int = HTTPStatus.OK) -> None:
         raw = json.dumps(value, ensure_ascii=False, indent=2).encode("utf-8")
@@ -242,12 +294,13 @@ class AgentBusHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def _projects_html(self) -> str:
+    def _projects_html(self, query: dict[str, list[str]]) -> str:
         projects = self.server.store.list_projects(limit=200)
         recent_events = self.server.store.list_events(limit=30)
+        link_suffix = _read_query_suffix(query)
         cards = "\n".join(
             f"""
-            <a class="card" href="/projects/{escape(project['name'])}">
+            <a class="card" href="/projects/{quote(project['name'])}{link_suffix}">
               <span class="name">{escape(project['title'])}</span>
               <span class="meta">{escape(project['name'])} · {project['active_task_count']} active / {project['task_count']} total</span>
               <span class="desc">{escape(project.get('description') or '')}</span>
@@ -264,17 +317,48 @@ class AgentBusHandler(BaseHTTPRequestHandler):
             """,
         )
 
-    def _project_html(self, name: str, limit: int = 100) -> str:
+    def _project_html(self, name: str, query: dict[str, list[str]], limit: int = 100) -> str:
         history = self.server.store.project_history(name, limit=limit)
         project = history["project"]
+        token = _one(query, "token")
+        token_suffix = f"?token={quote(token)}" if token else ""
+        read_suffix = _read_query_suffix(query)
+        webhook_status = "Configured" if project.get("has_discord_webhook") else "Not configured"
         return _page(
             project["title"],
             f"""
             <header>
-              <a class="back" href="/">&larr; Projects</a>
+              <a class="back" href="/{read_suffix}">&larr; Projects</a>
               <h1>{escape(project['title'])}</h1>
               <p>{escape(project.get('description') or project['name'])}</p>
             </header>
+            <section>
+              <h2>Overview</h2>
+              <form method="post" action="/projects/{quote(name)}/settings{token_suffix}">
+                <label>
+                  Title
+                  <input name="title" value="{escape(project['title'])}" autocomplete="off">
+                </label>
+                <label>
+                  Description
+                  <textarea name="description" rows="4">{escape(project.get('description') or '')}</textarea>
+                </label>
+                <input type="hidden" name="status" value="{escape(project.get('status') or 'active')}">
+                <button type="submit">Save Overview</button>
+              </form>
+            </section>
+            <section>
+              <h2>Discord</h2>
+              <form method="post" action="/projects/{quote(name)}/discord-webhook{token_suffix}">
+                <label>
+                  Project webhook
+                  <input name="discord_webhook_url" type="password" placeholder="https://discord.com/api/webhooks/..." autocomplete="off">
+                </label>
+                <button type="submit">Save</button>
+                <button type="submit" name="clear" value="1">Clear</button>
+                <span class="meta">Status: {webhook_status}. Saved URLs are hidden.</span>
+              </form>
+            </section>
             <section><h2>Tasks</h2>{_tasks_table(history['tasks'])}</section>
             <section><h2>History</h2>{_events_table(history['events'])}</section>
             """,
@@ -308,6 +392,20 @@ def _int(query: dict[str, list[str]], key: str, default: int) -> int:
     value = _one(query, key)
     if not value:
         return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _read_query_suffix(query: dict[str, list[str]]) -> str:
+    token = _one(query, "token")
+    read_token = _one(query, "read_token")
+    if token:
+        return f"?token={quote(token)}"
+    if read_token:
+        return f"?read_token={quote(read_token)}"
+    return ""
 
 
 def _page(title: str, body: str) -> str:
@@ -354,6 +452,37 @@ def _page(title: str, body: str) -> str:
     }}
     .name {{ font-weight: 700; }}
     .meta, .desc, .empty {{ color: color-mix(in srgb, CanvasText 68%, transparent); }}
+    form {{
+      display: grid;
+      gap: 10px;
+      max-width: 720px;
+    }}
+    label {{
+      display: grid;
+      gap: 5px;
+      font-weight: 650;
+    }}
+    input, textarea {{
+      width: 100%;
+      box-sizing: border-box;
+      padding: 9px 10px;
+      border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+      border-radius: 6px;
+      background: Canvas;
+      color: CanvasText;
+      font: inherit;
+    }}
+    button {{
+      width: fit-content;
+      padding: 8px 12px;
+      border: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+      border-radius: 6px;
+      background: color-mix(in srgb, #3b82f6 20%, Canvas);
+      color: CanvasText;
+      font: inherit;
+      font-weight: 650;
+      cursor: pointer;
+    }}
     table {{
       width: 100%;
       border-collapse: collapse;

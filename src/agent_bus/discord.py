@@ -49,15 +49,25 @@ class DiscordNotifier:
     def enabled(self) -> bool:
         return bool(self.default_webhook_url or self.routes.get("projects") or self.routes.get("repos"))
 
-    def notify_event(self, event: dict[str, Any], task: dict[str, Any] | None = None) -> None:
-        webhook_url = self._webhook_for(event, task)
+    def notify_event(
+        self,
+        event: dict[str, Any],
+        task: dict[str, Any] | None = None,
+        webhook_url: str | None = None,
+    ) -> None:
+        webhook_url = webhook_url or self._webhook_for(event, task)
         if not webhook_url:
             return
         payload = self._event_payload(event, task)
         self._post(webhook_url, payload)
 
-    def notify_task(self, task: dict[str, Any], event_type: str = "task_created") -> None:
-        webhook_url = self._webhook_for({}, task)
+    def notify_task(
+        self,
+        task: dict[str, Any],
+        event_type: str = "task_created",
+        webhook_url: str | None = None,
+    ) -> None:
+        webhook_url = webhook_url or self._webhook_for({}, task)
         if not webhook_url:
             return
         event = {

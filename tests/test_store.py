@@ -64,10 +64,20 @@ class StoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = Store(Path(tmp) / "bus.sqlite3")
             project = store.create_project(
-                {"name": "agent-bus", "title": "Agent Bus", "description": "Coordination"}
+                {
+                    "name": "agent-bus",
+                    "title": "Agent Bus",
+                    "description": "Coordination",
+                    "discord_webhook_url": "https://discord.example/webhook",
+                }
             )
             self.assertEqual(project["name"], "agent-bus")
             self.assertEqual(project["title"], "Agent Bus")
+            self.assertTrue(project["has_discord_webhook"])
+            self.assertNotIn("discord_webhook_url", project)
+            self.assertEqual(store.get_project_discord_webhook("agent-bus"), "https://discord.example/webhook")
+            cleared = store.set_project_discord_webhook("agent-bus", None)
+            self.assertFalse(cleared["has_discord_webhook"])
             self.assertEqual(store.list_projects()[0]["name"], "agent-bus")
 
     def test_rejects_double_claim(self) -> None:

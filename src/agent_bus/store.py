@@ -63,6 +63,7 @@ class Store:
                     title TEXT NOT NULL,
                     description TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'active',
+                    discord_webhook_url TEXT,
                     metadata_json TEXT NOT NULL DEFAULT '{}',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
@@ -130,6 +131,9 @@ class Store:
                 """
             )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_events_project_created_at ON events(project, created_at)")
+        project_columns = {row["name"] for row in conn.execute("PRAGMA table_info(projects)").fetchall()}
+        if "discord_webhook_url" not in project_columns:
+            conn.execute("ALTER TABLE projects ADD COLUMN discord_webhook_url TEXT")
         conn.execute(
             """
             INSERT OR IGNORE INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
@@ -148,6 +152,7 @@ class Store:
             "title": payload.get("title") or name,
             "description": payload.get("description", ""),
             "status": payload.get("status", "active"),
+            "discord_webhook_url": payload.get("discord_webhook_url"),
             "metadata_json": dumps(payload.get("metadata", {})),
             "created_at": now,
             "updated_at": now,
@@ -155,18 +160,44 @@ class Store:
         with self.connect() as conn:
             conn.execute(
                 """
-                INSERT INTO projects (name, title, description, status, metadata_json, created_at, updated_at)
-                VALUES (:name, :title, :description, :status, :metadata_json, :created_at, :updated_at)
+                INSERT INTO projects (
+                    name, title, description, status, discord_webhook_url, metadata_json, created_at, updated_at
+                )
+                VALUES (
+                    :name, :title, :description, :status, :discord_webhook_url,
+                    :metadata_json, :created_at, :updated_at
+                )
                 ON CONFLICT(name) DO UPDATE SET
                     title = excluded.title,
                     description = excluded.description,
                     status = excluded.status,
+                    discord_webhook_url = COALESCE(excluded.discord_webhook_url, projects.discord_webhook_url),
                     metadata_json = excluded.metadata_json,
                     updated_at = excluded.updated_at
                 """,
                 row,
             )
         return self.get_project(name)
+
+    def set_project_discord_webhook(self, name: str, webhook_url: str | None) -> dict[str, Any]:
+        now = now_iso()
+        self.ensure_project(name)
+        value = webhook_url.strip() if webhook_url else None
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE projects SET discord_webhook_url = ?, updated_at = ? WHERE name = ?",
+                (value or None, now, name),
+            )
+        return self.get_project(name)
+
+    def get_project_discord_webhook(self, name: str | None) -> str | None:
+        if not name:
+            return None
+        with self.connect() as conn:
+            row = conn.execute("SELECT discord_webhook_url FROM projects WHERE name = ?", (name,)).fetchone()
+        if row is None:
+            return None
+        return row["discord_webhook_url"] or None
 
     def ensure_project(self, name: str | None) -> None:
         if not name:
@@ -556,6 +587,8 @@ class Store:
 
     def _project_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
         item = dict(row)
+        webhook_url = item.pop("discord_webhook_url", None)
+        item["has_discord_webhook"] = bool(webhook_url)
         item["metadata"] = loads(item.pop("metadata_json"), {})
         item["task_count"] = item.get("task_count") or 0
         item["active_task_count"] = item.get("active_task_count") or 0

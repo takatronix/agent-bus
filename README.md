@@ -70,6 +70,16 @@ GET /projects/<project-name>
 GET /projects/<project-name>/history
 ```
 
+Authentication model:
+
+```text
+AGENT_BUS_TOKEN       write/admin token for agents, MCP clients, and settings changes
+AGENT_BUS_READ_TOKEN  optional read-only token for browser/API history
+AGENT_BUS_PUBLIC_READ true only when project history is safe to expose publicly
+```
+
+For production, put the Web UI behind Cloudflare Access, Google/IAP, Caddy basic auth, or your hosting provider's access control. Query-string tokens are convenient for local testing, but avoid them for long-lived production links.
+
 Create a project, then put tasks/events under it:
 
 ```bash
@@ -102,6 +112,8 @@ Then open:
 https://your-agent-bus.example.com?read_token=<read-token>
 https://your-agent-bus.example.com/projects/agent-bus?read_token=<read-token>
 ```
+
+Project Discord webhooks can be set from each project page. The saved webhook URL is never returned by the API or rendered back into HTML; the UI only shows whether one is configured. Saving or clearing a webhook requires the write/admin token.
 
 ## CLI
 
@@ -228,6 +240,14 @@ Create tasks with a project to route notifications:
 ```bash
 /home/aspa/agent-bus/bin/agentctl task create "Fix login race" --project agent-bus
 ```
+
+You can also set a project's webhook from the Web UI:
+
+```text
+https://your-agent-bus.example.com/projects/agent-bus
+```
+
+Project-level Web UI settings override `discord-webhooks.json`. If no project webhook exists, routing falls back to `discord-webhooks.json`, then `DISCORD_WEBHOOK_URL`.
 
 Messages are sent with `allowed_mentions: {"parse": []}` to avoid accidental mentions from agent output.
 

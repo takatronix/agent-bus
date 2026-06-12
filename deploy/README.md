@@ -10,6 +10,26 @@ AGENT_BUS_DEFAULT_PROJECT=<project-name>
 
 HTTPS should be handled by the hosting layer, not by the Python process.
 
+## Authentication
+
+Use two layers:
+
+```text
+Human browser access: Cloudflare Access, Google/IAP, Caddy basic auth, or provider auth
+Agent/API writes: AGENT_BUS_TOKEN
+```
+
+Recommended environment:
+
+```text
+AGENT_BUS_TOKEN=<long random write token>
+AGENT_BUS_READ_TOKEN=<optional read-only token>
+AGENT_BUS_PUBLIC_READ=false
+```
+
+Do not use `AGENT_BUS_PUBLIC_READ=true` unless project history is intentionally public.
+For MCP clients, pass `AGENT_BUS_TOKEN` in the environment. For browsers, prefer a real access-control layer in front of the app instead of sharing permanent query-string URLs.
+
 ## Fastest Options
 
 ### Option A: Managed Web Service

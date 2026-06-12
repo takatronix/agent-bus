@@ -26,10 +26,33 @@ class ApiTest(unittest.TestCase):
 
                 project_created = requests.post(
                     f"{base}/projects",
-                    json={"name": "agent-bus", "title": "Agent Bus"},
+                    json={
+                        "name": "agent-bus",
+                        "title": "Agent Bus",
+                        "discord_webhook_url": "https://discord.example/webhook",
+                    },
                     timeout=5,
                 )
                 self.assertEqual(project_created.status_code, 201)
+                project_payload = project_created.json()["project"]
+                self.assertTrue(project_payload["has_discord_webhook"])
+                self.assertNotIn("discord_webhook_url", project_payload)
+
+                form_update = requests.post(
+                    f"{base}/projects/agent-bus/settings",
+                    data={"title": "Agent Bus Updated", "description": "Updated overview"},
+                    timeout=5,
+                    allow_redirects=False,
+                )
+                self.assertEqual(form_update.status_code, 303)
+
+                webhook_update = requests.post(
+                    f"{base}/projects/agent-bus/discord-webhook",
+                    data={"clear": "1"},
+                    timeout=5,
+                    allow_redirects=False,
+                )
+                self.assertEqual(webhook_update.status_code, 303)
 
                 created = requests.post(
                     f"{base}/tasks",
@@ -67,10 +90,12 @@ class ApiTest(unittest.TestCase):
                 history = requests.get(f"{base}/projects/agent-bus/history", timeout=5)
                 self.assertEqual(history.status_code, 200)
                 self.assertEqual(history.json()["project"]["name"], "agent-bus")
+                self.assertFalse(history.json()["project"]["has_discord_webhook"])
 
                 html = requests.get(f"{base}/projects/agent-bus", headers={"Accept": "text/html"}, timeout=5)
                 self.assertEqual(html.status_code, 200)
-                self.assertIn("Agent Bus", html.text)
+                self.assertIn("Agent Bus Updated", html.text)
+                self.assertIn("Project webhook", html.text)
             finally:
                 server.shutdown()
                 server.server_close()
